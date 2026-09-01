@@ -219,7 +219,35 @@ def test_validate_fallback_metadata_rejects_run_collision(tmp_path, config):
     fallback = LegendMetadata(fallback_dir)
 
     with pytest.raises(SimflowConfigError, match="p02"):
-        metadata.validate_fallback_metadata(config.metadata, fallback, fallback_dir)
+        metadata.validate_fallback_metadata(config.metadata, fallback)
+
+
+def test_validate_fallback_metadata_rejects_late_start_key(tmp_path, config):
+    """Refuse a fallback start key that reaches a legend-metadata channel map.
+
+    Such a run resolves to the legend-metadata channel map instead.
+    """
+    fallback_dir = tmp_path / "metadata/l1000dsg01"
+    (fallback_dir / "datasets").mkdir(parents=True)
+    (fallback_dir / "datasets/runinfo.yaml").write_text(
+        "p99:\n  r000:\n    phy:\n      start_key: 20990101T000000Z\n"
+    )
+    fallback = LegendMetadata(fallback_dir)
+
+    with pytest.raises(SimflowConfigError, match="20990101T000000Z"):
+        metadata.validate_fallback_metadata(config.metadata, fallback)
+
+
+def test_validate_fallback_metadata_accepts_early_start_key(tmp_path, config):
+    """Accept a fallback start key that precedes every legend-metadata entry."""
+    fallback_dir = tmp_path / "metadata/l1000dsg01"
+    (fallback_dir / "datasets").mkdir(parents=True)
+    (fallback_dir / "datasets/runinfo.yaml").write_text(
+        "p99:\n  r000:\n    phy:\n      start_key: 20000102T000000Z\n"
+    )
+    fallback = LegendMetadata(fallback_dir)
+
+    metadata.validate_fallback_metadata(config.metadata, fallback)
 
 
 def test_is_simid():

@@ -483,20 +483,15 @@ def get_hpge_voltage(config: SimflowConfig, hpge: str, runid: str) -> int:
     """Get the operational voltage for an HPGe in a given run.
 
     Read from ``simprod/config/pars/{experiment}/geds/opv/``. A ``default``
-    entry, if present, applies to every detector without one of its own; this
-    spares experiments operating all detectors at the same voltage (e.g.
-    LEGEND-1000) from listing hundreds of identical entries.
-
-    Raises ``KeyError`` if neither the detector nor a ``default`` entry is
-    found. Callers use this to detect detectors that are not biased (e.g. off
-    ones), so do not turn it into a silent fallback.
-
-    Returns the voltage as an integer.
+    entry applies to every detector without one of its own, so an experiment
+    that biases all detectors alike lists one entry.
     """
     opv = simpars(config, "geds.opv", runid, config.experiment)
 
     entry = opv.get(hpge, opv.get("default"))
     if entry is None:
+        # callers read this error as "the detector is not biased" (e.g. it is
+        # off). Do not turn it into a silent fallback
         msg = (
             f"operational voltage for hpge {hpge} not found in run {runid} "
             "(and no 'default' entry)"

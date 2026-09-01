@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from collections.abc import Callable, Iterable, Mapping
@@ -70,21 +71,12 @@ def load_fallback_metadata(
 ) -> LegendMetadata | None:
     """Load the fallback metadata of the current experiment.
 
-    An experiment that does not exist yet is absent from `legend-metadata`. Its
-    metadata lives in `legend-simflow-config` instead, under
-    ``{paths.config}/metadata/{experiment}/``. The tree uses the
-    `legend-metadata` layout, so the same class reads it.
+    The tree lives under ``{paths.config}/metadata/{experiment}/`` and uses the
+    `legend-metadata` layout, so the same class reads it. See
+    :ref:`meta-fallback`. Returns ``None`` if the directory does not exist.
 
-    Returns ``None`` if the directory does not exist.
-
-    Parameters
-    ----------
-    config
-        Simflow configuration object, with ``config.metadata`` already attached.
-    logger
-        Logger to use for status messages (e.g. the Snakemake logger when called
-        from a Snakefile). Defaults to the module logger.
-
+    `config` must already carry ``config.metadata``. `logger` takes the
+    Snakemake logger when a Snakefile calls this.
     """
     log_ = logger if logger is not None else log
 
@@ -99,14 +91,18 @@ def load_fallback_metadata(
     log_.info(msg)
 
     fallback = LegendMetadata(path)
-    validate_fallback_metadata(config.metadata, fallback, path)
+    validate_fallback_metadata(config.metadata, fallback)
     return fallback
 
 
 def validate_fallback_metadata(
-    metadata: LegendMetadata, fallback: LegendMetadata, path: Path
+    metadata: LegendMetadata, fallback: LegendMetadata
 ) -> None:
     """Refuse fallback metadata whose runs collide with the `legend-metadata` runs.
+
+    Applies both rules of :ref:`meta-fallback`: the periods must not be periods
+    of `legend-metadata`, and the start keys must precede every validity entry
+    of it.
 
     Parameters
     ----------
@@ -114,29 +110,44 @@ def validate_fallback_metadata(
         LEGEND metadata database.
     fallback
         Fallback metadata of the experiment.
-    path
-        Directory that holds `fallback`. The error message names it.
 
     """
     try:
-        periods = set(fallback.datasets.runinfo)
+        runinfo = fallback.datasets.runinfo
     except LOOKUP_ERRORS:
         return
 
     try:
-        existing = set(metadata.datasets.runinfo)
+        existing = metadata.datasets.runinfo
     except LOOKUP_ERRORS:
         return
 
-    clash = sorted(periods & existing)
+    clash = sorted(set(runinfo) & set(existing))
     if clash:
         msg = (
-            f"legend-metadata also defines the period(s) {', '.join(clash)} of "
-            f"the fallback metadata in {path}. A run of such a period resolves "
-            "to the legend-metadata run. Number the fallback periods outside the "
-            "range of the real experiment, for example p99"
+            f"legend-metadata also defines the period(s) {', '.join(clash)}. "
+            "A run of such a period resolves to the legend-metadata run. "
+            "Number the fallback periods outside the range of the real experiment."
         )
         raise SimflowConfigError(msg, "paths.config")
+
+    latest = max(
+        info.start_key
+        for runs in runinfo.values()
+        for datatypes in runs.values()
+        for info in datatypes.values()
+    )
+
+    try:
+        metadata.channelmap(latest, skip_version_check=True)
+    except LOOKUP_ERRORS:
+        return
+
+    msg = (
+        f"legend-metadata holds a channel map valid at {latest}. "
+        "Keep the fallback start keys before the legend-metadata era."
+    )
+    raise SimflowConfigError(msg, "paths.config")
 
 
 def lookup(
@@ -144,15 +155,11 @@ def lookup(
     query: Callable[[LegendMetadata], object],
     default: object = _MISSING,
 ) -> object:
-    """Run `query` against the metadata databases, in order.
+    """Run `query` against `legend-metadata`, then the fallback metadata.
 
-    The function queries `legend-metadata` first and the fallback metadata
-    second (see :func:`load_fallback_metadata`). The real database therefore
-    always wins.
-
-    A database that raises one of :data:`LOOKUP_ERRORS` does not hold the item,
-    so the function tries the next one. If no database holds the item, the
-    function raises the error of the last one.
+    A database that raises one of :data:`LOOKUP_ERRORS` does not hold the item.
+    If neither holds it, the function returns `default`, or re-raises the error
+    of `legend-metadata` when there is no `default`.
 
     Parameters
     ----------
@@ -161,27 +168,22 @@ def lookup(
     query
         Callable that takes a metadata database and returns the queried item.
     default
-        Value to return when no database holds the item. Without it, the
+        Value to return when neither database holds the item. Without it, the
         function raises.
 
     """
-    dbs = [config.metadata]
+    try:
+        return query(config.metadata)
+    except LOOKUP_ERRORS:
+        fallback = config.get("fallback_metadata")
+        if fallback is not None:
+            with contextlib.suppress(*LOOKUP_ERRORS):
+                return query(fallback)
 
-    fallback = config.get("fallback_metadata")
-    if fallback is not None:
-        dbs.append(fallback)
+        if default is not _MISSING:
+            return default
 
-    error = None
-    for db in dbs:
-        try:
-            return query(db)
-        except LOOKUP_ERRORS as e:
-            error = e
-
-    if default is not _MISSING:
-        return default
-
-    raise error
+        raise
 
 
 def get_simconfig(
@@ -214,8 +216,6 @@ def get_simconfig(
 
     block = f"simprod.config.tier.{tier}.{config.experiment}.simconfig"
     try:
-        # an empty simconfig.yaml is a valid configuration (e.g. a hit tier that
-        # takes its runlist from config.runlist), but YAML loads it as None
         simcfg = _m.tier[tier][config.experiment].simconfig or AttrsDict({})
 
         if simid is None:
@@ -612,17 +612,9 @@ def validate_simconfig_keys(simconfig: Mapping, block: str | None = None) -> Non
 def experiment_prefix(experiment: str) -> str:
     """Get the runid prefix of an experiment.
 
-    The prefix is the leading letters-then-digits part of the experiment
-    identifier, i.e. the name of the setup itself, stripped of the
-    configuration tag: ``l200cfg09`` and ``l1000dsg01`` give ``l200`` and
-    ``l1000``. Falls back to :data:`DEFAULT_RUNID_PREFIX` for identifiers that
-    do not follow the convention.
-
-    Parameters
-    ----------
-    experiment
-        Experiment identifier (e.g. ``l200cfg09``, ``l1000dsg01``).
-
+    The prefix is the experiment identifier without its configuration tag:
+    ``l200cfg09`` and ``l1000dsg01`` give ``l200`` and ``l1000``. An identifier
+    that does not follow the convention gives :data:`DEFAULT_RUNID_PREFIX`.
     """
     match = re.match(r"^[A-Za-z]+\d+", experiment)
     if match is None:

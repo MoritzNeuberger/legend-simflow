@@ -147,7 +147,7 @@ def main() -> int:
 
     # --meta replaces the database named by the configuration
     if args.meta is not None:
-        simflow_config["metadata"] = LegendMetadata(str(Path(args.meta)))
+        simflow_config["metadata"] = LegendMetadata(str(args.meta))
 
     l200data = (
         Path(args.l200data)

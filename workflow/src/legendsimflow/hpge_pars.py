@@ -19,7 +19,7 @@ import itertools
 import logging
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -1058,42 +1058,17 @@ def build_aoe_res_func_from_entry(meta: dict | AttrsDict) -> Callable:
 
 
 def build_energy_res_func_dict(
-    l200data: str | Path,
-    config: SimflowConfig,
-    runid: str,
-    *,
-    hit_tier_name: str = "hit",
-    energy_res_pars: dict | AttrsDict | None = None,
+    energy_res_pars: Mapping,
 ) -> dict[str, Callable]:
     r"""Build energy resolution functions for each HPGe detector in a LEGEND-200 run.
+
+    `energy_res_pars` comes from :func:`lookup_energy_res_metadata`.
 
     Returns
     -------
     Mapping of HPGe name to energy resolution function (FWHM), where energy is
     expected in units of keV.
-
-    Parameters
-    ----------
-    l200data
-        The path to the L200 data production cycle.
-    config
-        Simflow configuration object.
-    runid
-        LEGEND-200 run identifier, must be of the form `{EXPERIMENT}-{PERIOD}-{RUN}-{TYPE}`.
-    hit_tier_name
-        name of the hit tier. This is typically "hit" or "pht".
-    energy_res_pars
-        from :func:`lookup_energy_res_metadata`.
-
     """
-    if energy_res_pars is None:
-        energy_res_pars = lookup_energy_res_metadata(
-            l200data,
-            config,
-            runid,
-            hit_tier_name=hit_tier_name,
-        )
-
     if not isinstance(energy_res_pars, AttrsDict):
         energy_res_pars = AttrsDict(energy_res_pars)
 
@@ -1120,42 +1095,17 @@ def build_energy_res_func_dict(
 
 
 def build_aoe_res_func_dict(
-    l200data: str | Path,
-    config: SimflowConfig,
-    runid: str,
-    *,
-    hit_tier_name: str = "hit",
-    aoe_res_pars: dict | AttrsDict | None = None,
+    aoe_res_pars: Mapping,
 ) -> dict[str, Callable]:
     r"""Build A/E resolution functions for each HPGe detector in a LEGEND-200 run.
+
+    `aoe_res_pars` comes from :func:`lookup_aoe_res_metadata`.
 
     Returns
     -------
     Mapping of HPGe name to A/E resolution as a function of energy, where
     energy is expected in units of keV.
-
-    Parameters
-    ----------
-    l200data
-        The path to the L200 data production cycle.
-    config
-        Simflow configuration object.
-    runid
-        LEGEND-200 run identifier, must be of the form `{EXPERIMENT}-{PERIOD}-{RUN}-{TYPE}`.
-    hit_tier_name
-        name of the hit tier. This is typically "hit" or "pht".
-    aoe_res_pars
-        from :func:`lookup_aoe_res_metadata`.
-
     """
-    if aoe_res_pars is None:
-        aoe_res_pars = lookup_aoe_res_metadata(
-            l200data,
-            config,
-            runid,
-            hit_tier_name=hit_tier_name,
-        )
-
     if not isinstance(aoe_res_pars, AttrsDict):
         aoe_res_pars = AttrsDict(aoe_res_pars)
 

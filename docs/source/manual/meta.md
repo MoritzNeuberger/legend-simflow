@@ -77,9 +77,12 @@ wins. Two rules keep the runs apart:
   number alone does not cover it. A timestamp that precedes every validity entry
   raises. This is what sends the lookup to the fallback metadata.
 
-The simflow applies the first rule at startup. It refuses fallback metadata
-whose periods collide. The parameter directories of the experiment (see
-{ref}`opv-metadata-dir`) need a validity entry that covers these start keys.
+Both rules are requirements, and the simflow applies both at startup
+({func}`legendsimflow.metadata.validate_fallback_metadata`). It refuses fallback
+metadata whose periods collide with those in _legend-metadata_, and fallback
+metadata whose start keys reach a _legend-metadata_ channel map. The parameter
+directories of the experiment (see {ref}`opv-metadata-dir`) need a validity
+entry that covers these start keys.
 
 :::
 
